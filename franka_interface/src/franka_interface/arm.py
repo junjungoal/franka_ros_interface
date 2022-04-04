@@ -148,6 +148,18 @@ class ArmInterface(object):
         self._jacobian = None
         self._cartesian_contact = None
 
+        self.O_P_EE = None   # current position of EE in link 0 frame
+        self.O_V_EE = None   # current cartesian velocity of EE in link 0 frame
+        self.O_O_EE = None
+        self.O_T_EE = None
+        self.O_P_EE_prev = None   # previous position of EE in link 0 frame
+        self.O_V_EE_prev = None   # previous cartesian velocity of EE in link 0 frame
+        self.O_O_EE_prev = None
+        self.O_T_EE_prev = None
+
+        self.O_P_EE_timestamp_secs = None
+        self.O_P_EE_timestamp_secs_prev = None
+
         self._robot_mode = False
 
         self._command_msg = JointCommand()
@@ -383,6 +395,29 @@ class ArmInterface(object):
             'position': cart_pose_trans_mat[:3, 3],
             'orientation': quaternion.from_rotation_matrix(cart_pose_trans_mat[:3, :3]),
             'ori_mat': cart_pose_trans_mat[:3,:3]}
+
+        self.O_P_EE_prev = self.O_P_EE
+        self.O_V_EE_prev = self.O_V_EE
+        self.O_P_EE_timestamp_secs_prev = self.O_P_EE_timestamp_secs
+        self.O_O_EE_prev = self.O_O_EE
+        self.O_T_EE_prev = self.O_T_EE
+
+        self.O_P_EE = np.array(msg.O_T_EE[-4:-1])
+        self.O_O_EE = np.array(msg.O_T_EE[:-4])
+        self.O_T_EE = np.array(msg.O_T_EE).reshape((4, 4)).T
+        self.O_P_EE_timestamp_secs = msg.header.stamp.secs + msg.header.stamp.nsecs*(1e-9)
+
+        if (self.O_P_EE_prev is not None):
+            dt = self.O_P_EE_timestamp_secs - self.O_P_EE_timestamp_secs_prev
+            assert (dt > 0)
+            self.O_V_EE = (self.O_P_EE - self.O_P_EE_prev) / dt
+
+        # Filter velocity (not sure if this is necessary)
+        if (self.O_V_EE_prev is not None):
+            self.O_V_EE = 0.5 * self.O_V_EE + 0.5*self.O_V_EE_prev
+
+        # self._cartesian_velocity['linear'] = self.O_V_EE
+
 
         self._cartesian_effort = {
             'force': np.asarray([msg.O_F_ext_hat_K.wrench.force.x,
@@ -700,7 +735,7 @@ class ArmInterface(object):
 
     def move_to_joint_positions(self, positions, timeout=10.0,
                                 threshold=0.00085,
-                                test=None, use_moveit=True):
+                                test=None, use_moveit=True, wait=False):
         """
         (Blocking) Commands the limb to the provided positions.
         Waits until the reported joint state matches that specified.
@@ -726,7 +761,7 @@ class ArmInterface(object):
 
         if use_moveit and self._movegroup_interface:
             self._movegroup_interface.go_to_joint_positions(
-                [positions[n] for n in self._joint_names], tolerance=threshold)
+                [positions[n] for n in self._joint_names], tolerance=threshold, wait=wait)
 
         else:
             if use_moveit:

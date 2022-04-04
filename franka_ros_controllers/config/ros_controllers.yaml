@@ -93,3 +93,6 @@ effort_joint_torque_controller:
         - panda_joint6
         - panda_joint7
 
+cartesian_velocity_controller:
+    type: franka_ros_controllers/CartesianVelocityController
+    arm_id: panda
